@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     TextField, Checkbox, Button, FormControlLabel,
     FormHelperText, Box, Select, SelectChangeEvent,
-    Stepper, Step, StepLabel, StepContent, Typography, Paper
+    Stepper, Step, StepLabel, StepContent, Typography, Paper,
+    Autocomplete
 } from '@mui/material';
 import MenuItem from "@mui/material/MenuItem";
 import FormControl from "@mui/material/FormControl";
@@ -12,13 +13,14 @@ import InputLabel from "@mui/material/InputLabel";
 
 // Updated type definitions
 interface FormField {
-    type: 'text' | 'number' | 'email' | 'password' | 'checkbox' | 'button' | 'select';
+    type: 'text' | 'number' | 'email' | 'password' | 'checkbox' | 'button' | 'select' | 'autocomplete' | 'id';
     label: string;
     name: string;
     defaultValue?: string | number | boolean;
     required?: boolean;
     hint?: string;
     options?: { label: string; value: string }[];
+    enabledBy?: string; // Name of the checkbox field that controls visibility
 }
 
 interface FormStep {
@@ -42,6 +44,7 @@ interface DynamicFormProps {
 const DynamicForm: React.FC<DynamicFormProps> = ({ formStructure, onSubmit, disabled }) => {
     const [activeStep, setActiveStep] = useState(0);
     const [formData, setFormData] = useState<Record<string, any>>({});
+    const [isStepValid, setIsStepValid] = useState(false);
 
     // Normalize form structure
     const normalizedSteps = (() => {
@@ -55,6 +58,34 @@ const DynamicForm: React.FC<DynamicFormProps> = ({ formStructure, onSubmit, disa
     const isStepper = normalizedSteps.length > 1;
     const isLastStep = activeStep === normalizedSteps.length - 1;
     const currentFields = normalizedSteps[activeStep]?.fields || [];
+
+    // Validate the current step whenever formData or activeStep changes
+    useEffect(() => {
+        const validateStep = () => {
+            const isValid = currentFields.every(field => {
+                if (!field.required) return true;
+                const value = formData[field.name] ?? field.defaultValue;
+                switch (field.type) {
+                    case 'text':
+                    case 'email':
+                    case 'password':
+                    case 'number':
+                    case 'id':
+                        return !!value?.toString().trim();
+                    case 'checkbox':
+                        return !!value;
+                    case 'select':
+                    case 'autocomplete':
+                        return value !== '' && value !== undefined && value !== null;
+                    default:
+                        return true;
+                }
+            });
+            setIsStepValid(isValid);
+        };
+
+        validateStep();
+    }, [formData, activeStep, currentFields]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value, type, checked } = e.target;
@@ -81,6 +112,11 @@ const DynamicForm: React.FC<DynamicFormProps> = ({ formStructure, onSubmit, disa
     };
 
     const renderField = (field: FormField) => {
+        // Check if the field should be displayed based on the checkbox state
+        if (field.enabledBy && !formData[field.enabledBy]) {
+            return null; // Skip rendering if the checkbox is not checked
+        }
+
         switch (field.type) {
             case 'text':
             case 'email':
@@ -92,12 +128,13 @@ const DynamicForm: React.FC<DynamicFormProps> = ({ formStructure, onSubmit, disa
                         label={field.label}
                         name={field.name}
                         type={field.type}
-                        value={formData[field.name] || field.defaultValue || ''}
+                        value={formData[field.name] ?? field.defaultValue ?? ''}
                         onChange={handleChange}
                         required={field.required}
                         fullWidth
                         helperText={field.hint}
                         disabled={disabled}
+                        error={field.required && !formData[field.name]?.toString().trim()}
                     />
                 );
             case 'checkbox':
@@ -107,7 +144,7 @@ const DynamicForm: React.FC<DynamicFormProps> = ({ formStructure, onSubmit, disa
                         control={
                             <Checkbox
                                 name={field.name}
-                                checked={formData[field.name] || field.defaultValue || false}
+                                checked={formData[field.name] ?? field.defaultValue ?? false}
                                 onChange={handleChange}
                                 disabled={disabled}
                             />
@@ -117,7 +154,7 @@ const DynamicForm: React.FC<DynamicFormProps> = ({ formStructure, onSubmit, disa
                     />
                 );
             case 'button':
-                if (isStepper) return null; // Hide buttons in stepper mode
+                if (isStepper) return null;
                 return (
                     <Button
                         key={field.name}
@@ -134,11 +171,12 @@ const DynamicForm: React.FC<DynamicFormProps> = ({ formStructure, onSubmit, disa
                         <InputLabel>{field.label}</InputLabel>
                         <Select
                             name={field.name}
-                            value={formData[field.name] || field.defaultValue || ''}
+                            value={formData[field.name] ?? field.defaultValue ?? ''}
                             label={field.label}
                             required={field.required}
                             onChange={handleSelectChange}
                             disabled={disabled}
+                            error={field.required && !formData[field.name]}
                         >
                             {field.options?.map((option, index) => (
                                 <MenuItem key={index} value={option.value}>{option.label}</MenuItem>
@@ -146,6 +184,52 @@ const DynamicForm: React.FC<DynamicFormProps> = ({ formStructure, onSubmit, disa
                         </Select>
                         {field.hint && <FormHelperText>{field.hint}</FormHelperText>}
                     </FormControl>
+                );
+            case 'autocomplete':
+                return (
+                    <Autocomplete
+                        key={field.name}
+                        options={field.options || []}
+                        getOptionLabel={(option) => option.label}
+                        value={field.options?.find(option =>
+                            option.value === (formData[field.name] ?? field.defaultValue)
+                        ) || null}
+                        onChange={(event, newValue) => {
+                            const newVal = newValue ? newValue.value : '';
+                            setFormData(prev => ({
+                                ...prev,
+                                [field.name]: newVal,
+                            }));
+                        }}
+                        renderInput={(params) => (
+                            <TextField
+                                {...params}
+                                label={field.label}
+                                required={field.required}
+                                helperText={field.hint}
+                                fullWidth
+                                error={field.required && !formData[field.name]}
+                            />
+                        )}
+                        disabled={disabled}
+                        isOptionEqualToValue={(option, value) => option.value === value?.value}
+                    />
+                );
+            case 'id':
+                return (
+                    <TextField
+                        key={field.name}
+                        label={field.label}
+                        name={field.name}
+                        type="text"
+                        value={formData[field.name] ?? field.defaultValue ?? ''}
+                        onChange={handleChange}
+                        required={field.required}
+                        fullWidth
+                        helperText={field.hint}
+                        disabled={disabled}
+                        error={field.required && !formData[field.name]?.toString().trim()}
+                    />
                 );
             default:
                 return null;
@@ -181,6 +265,7 @@ const DynamicForm: React.FC<DynamicFormProps> = ({ formStructure, onSubmit, disa
                                         <Button
                                             variant="contained"
                                             onClick={handleNext}
+                                            disabled={!isStepValid || disabled}
                                         >
                                             Next
                                         </Button>
@@ -201,7 +286,6 @@ const DynamicForm: React.FC<DynamicFormProps> = ({ formStructure, onSubmit, disa
             ) : (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     {normalizedSteps.flatMap(step => step.fields).map(renderField)}
-                    {/* Add default submit button if no button in fields */}
                     {!normalizedSteps.some(step => step.fields.some(f => f.type === 'button')) && (
                         <Button
                             type="submit"

@@ -38,7 +38,34 @@ export const executorForm: FormStructure = {
                     name: 'email',
                     required: true,
                 },
+                {
+                    type: 'autocomplete',
+                    label: 'Select and i/p field',
+                    name: 'Autocomplete',
+                    options: [
+                        { label: 'one', value: 'one' },
+                        { label: 'Two', value: 'two' },
+                    ],
+                },
             ]
+        },
+        {
+            label: 'Step 1',
+            fields: [
+                {
+                    type: 'checkbox',
+                    label: 'Enable ID Field',
+                    name: 'enableId',
+                    defaultValue: false,
+                },
+                {
+                    type: 'id',
+                    label: 'ID',
+                    name: 'id',
+                    enabledBy: 'enableId', // This field is enabled by the checkbox
+                    required: false,
+                },
+            ],
         },
         {
             label: 'Account Settings',
